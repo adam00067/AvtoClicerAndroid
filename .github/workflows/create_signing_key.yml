@@ -1,0 +1,26 @@
+name: Create signing key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  keystore:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "KEYSTORE_PASSWORD is not set"
+            exit 1
+          fi
+
+          keytool -genkeypair             -alias avtokliker             -keyalg RSA             -keysize 2048             -validity 10000             -keystore avtokliker-upload.jks             -storepass "$KEYSTORE_PASSWORD"             -keypass "$KEYSTORE_PASSWORD"             -dname "CN=AvtoClicker, OU=Mobile, O=AvtoClicker, L=Unknown, ST=Unknown, C=RU"
+
+      - name: Save keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: avtokliker-upload-keystore
+          path: avtokliker-upload.jks
