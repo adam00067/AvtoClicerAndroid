@@ -1,0 +1,37 @@
+name: Build AAB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Скачать файлы
+        uses: actions/checkout@v4
+
+      - name: Распаковать проект
+        run: |
+          unzip -q AvtoClickerAndroid_AAB_project.zip -d project
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Собрать AAB
+        working-directory: project/AvtoClickerAndroid
+        run: gradle bundleRelease --no-daemon
+
+      - name: Сохранить AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvtoClicker-release
+          path: project/AvtoClickerAndroid/app/build/outputs/bundle/release/app-release.aab
