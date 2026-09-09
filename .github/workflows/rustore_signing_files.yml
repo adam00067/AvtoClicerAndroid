@@ -1,0 +1,99 @@
+name: RuStore Signing Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      encryption_key:
+        description: "Вставь encryptionkey из окна RuStore (пункт 2)"
+        required: true
+        type: string
+
+jobs:
+  create-rustore-signing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check PEPK
+        run: |
+          test -f pepk.jar
+          echo "PEPK найден: pepk.jar"
+
+      - name: Download keystore artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ARTIFACT_URL="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts
+              | map(select(.name == "avtokliker-upload-keystore" and .expired == false))
+              | sort_by(.created_at)
+              | reverse
+              | .[0].archive_download_url')"
+
+          test -n "$ARTIFACT_URL"
+          curl -L \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ARTIFACT_URL" \
+            -o keystore-artifact.zip
+
+          unzip -o keystore-artifact.zip -d keystore-artifact
+          KEYSTORE="$(find keystore-artifact -type f \( -name '*.jks' -o -name '*.keystore' \) | head -n 1)"
+          test -n "$KEYSTORE"
+          echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Create RuStore app signing ZIP with PEPK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ENCRYPTION_KEY: ${{ inputs.encryption_key }}
+        run: |
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$ENCRYPTION_KEY"
+
+          java -version
+
+          java -jar pepk.jar \
+            --keystore "$KEYSTORE" \
+            --alias avtokliker \
+            --output pepk_out.zip \
+            --encryptionkey="$ENCRYPTION_KEY" \
+            --include-cert
+
+          test -f pepk_out.zip
+          ls -lh pepk_out.zip
+
+      - name: Create RuStore upload certificate PEM
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          keytool -exportcert \
+            -alias avtokliker \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -rfc \
+            -file uploadcert.pem
+
+          test -f uploadcert.pem
+          ls -lh uploadcert.pem
+
+      - name: Verify output files
+        run: |
+          echo "=== pepk_out.zip ==="
+          unzip -l pepk_out.zip
+          echo "=== uploadcert.pem ==="
+          head -n 2 uploadcert.pem
+          echo "..."
+          wc -c pepk_out.zip uploadcert.pem
+
+      - name: Upload RuStore signing files
+        uses: actions/upload-artifact@v4
+        with:
+          name: RuStore-signing-files
+          path: |
+            pepk_out.zip
+            uploadcert.pem
+          if-no-files-found: error
